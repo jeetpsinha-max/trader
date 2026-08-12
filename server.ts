@@ -18,8 +18,69 @@ const ai = new GoogleGenAI({
     }
   }
 });
+// New Endpoints Added
 
-// API route to proxy live price from Yahoo Finance
+app.get("/api/health", (req, res) => {
+  res.json({ status: "healthy", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/market/scrape", async (req, res) => {
+  try {
+    const url = 'https://finance.yahoo.com/';
+    const response = await axios.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
+    const $ = cheerio.load(response.data);
+    const headlines: string[] = [];
+    $('h3').each((i, el) => {
+      const title = $(el).text().trim();
+      if (title && headlines.length < 5) headlines.push(title);
+    });
+    res.json({ status: "success", headlines });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/market/analysis", async (req, res) => {
+  const { ticker, marketData } = req.body;
+  try {
+    const prompt = `Perform technical and sentiment analysis on ${ticker} using the following data: ${JSON.stringify(marketData)}. Respond with your analysis.`;
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+    });
+    res.json({ analysis: response.text });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/trade/signal", async (req, res) => {
+  const { ticker, marketData } = req.body;
+  try {
+    const prompt = `Based on this data for ${ticker}: ${JSON.stringify(marketData)}, generate a trading signal.`;
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            signal: { type: Type.STRING, description: "BUY, SELL, or HOLD" },
+            confidence: { type: Type.NUMBER, description: "Confidence score between 0 and 100" }
+          }
+        }
+      }
+    });
+    res.json(JSON.parse(response.text || "{}"));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Existing code
 app.get("/api/quote/:ticker", async (req, res) => {
   const { ticker } = req.params;
   try {
